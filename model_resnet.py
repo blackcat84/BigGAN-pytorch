@@ -121,7 +121,8 @@ class SelfAttention(nn.Module):
 
 
 class ConditionalNorm(nn.Module):
-    def __init__(self, in_channel, n_condition=148):
+    ###def __init__(self, in_channel, n_condition=148):
+    def __init__(self, in_channel, n_condition=144):
         super().__init__()
 
         self.bn = nn.BatchNorm2d(in_channel, affine=False)
@@ -174,8 +175,10 @@ class GBlock(nn.Module):
         self.activation = activation
         self.bn = bn
         if bn:
-            self.HyperBN = ConditionalNorm(in_channel, 148)
-            self.HyperBN_1 = ConditionalNorm(out_channel, 148)
+            ###self.HyperBN = ConditionalNorm(in_channel, 148)
+            ###self.HyperBN_1 = ConditionalNorm(out_channel, 148)
+            self.HyperBN = ConditionalNorm(in_channel, 144)
+            self.HyperBN_1 = ConditionalNorm(out_channel, 144)
 
     def forward(self, input, condition=None):
         out = input
@@ -212,7 +215,7 @@ class GBlock(nn.Module):
 
 
 class Generator(nn.Module):
-    def __init__(self, code_dim=100, n_class=1000, chn=96, debug=False):
+    def __init__(self, code_dim=100, n_class=1000, chn=96, img_size=128, debug=False):
         super().__init__()
 
         self.linear = SpectralNorm(nn.Linear(n_class, 128, bias=False))
@@ -220,23 +223,44 @@ class Generator(nn.Module):
         if debug:
             chn = 8
 
-        self.first_view = 16 * chn
+        # AG for 128x128 images
+        if img_size == 128:
 
-        self.G_linear = SpectralNorm(nn.Linear(20, 4 * 4 * 16 * chn))
+            self.first_view = 16 * chn
 
-        self.conv = nn.ModuleList([GBlock(16*chn, 16*chn, n_class=n_class),
-                                GBlock(16*chn, 8*chn, n_class=n_class),
-                                GBlock(8*chn, 4*chn, n_class=n_class),
-                                GBlock(4*chn, 2*chn, n_class=n_class),
-                                SelfAttention(2*chn),
-                                GBlock(2*chn, 1*chn, n_class=n_class)])
+            self.G_linear = SpectralNorm(nn.Linear(20, 4 * 4 * 16 * chn))
+
+            self.conv = nn.ModuleList([GBlock(16*chn, 16*chn, n_class=n_class),
+                                    GBlock(16*chn, 8*chn, n_class=n_class),
+                                    GBlock(8*chn, 4*chn, n_class=n_class),
+                                    GBlock(4*chn, 2*chn, n_class=n_class),
+                                    SelfAttention(2*chn),
+                                    GBlock(2*chn, 1*chn, n_class=n_class)])
+            
+        # AG for 512x512 images
+        elif img_size == 512:
+            
+            self.first_view = 16 * chn
+
+            ###self.G_linear = SpectralNorm(nn.Linear(20, 4 * 4 * 16 * chn))
+            self.G_linear = SpectralNorm(nn.Linear(16, 4 * 4 * 16 * chn))
+
+            self.conv = nn.ModuleList([GBlock(16*chn, 16*chn, n_class=n_class),
+                                    GBlock(16*chn, 8*chn, n_class=n_class),
+                                    GBlock(16*chn, 8*chn, n_class=n_class),
+                                    GBlock(8*chn, 4*chn, n_class=n_class),
+                                    SelfAttention(2*chn),
+                                    GBlock(4*chn, 2*chn, n_class=n_class),
+                                    GBlock(2*chn, 1*chn, n_class=n_class),
+                                    GBlock(2*chn, 1*chn, n_class=n_class)])
 
         # TODO impl ScaledCrossReplicaBatchNorm 
         self.ScaledCrossReplicaBN = ScaledCrossReplicaBatchNorm2d(1*chn)
         self.colorize = SpectralNorm(nn.Conv2d(1*chn, 3, [3, 3], padding=1))
 
     def forward(self, input, class_id):
-        codes = torch.split(input, 20, 1)
+        ###codes = torch.split(input, 20, 1)
+        codes = torch.split(input, 16, 1)
         class_emb = self.linear(class_id)  # 128
 
         out = self.G_linear(codes[0])
@@ -251,19 +275,18 @@ class Generator(nn.Module):
                 condition = torch.cat([conv_code, class_emb], 1)
                 # print('condition',condition.size()) #torch.Size([4, 148])
                 out = conv(out, condition)
-
             else:
                 out = conv(out)
-
+                
         out = self.ScaledCrossReplicaBN(out)
         out = F.relu(out)
         out = self.colorize(out)
-
+        
         return F.tanh(out)
 
 
 class Discriminator(nn.Module):
-    def __init__(self, n_class=1000, chn=96, debug=False):
+    def __init__(self, n_class=1000, chn=96, img_size=128, debug=False):
         super().__init__()
 
         def conv(in_channel, out_channel, downsample=True):
@@ -278,31 +301,59 @@ class Discriminator(nn.Module):
             chn = 8
         self.debug = debug
 
-        self.pre_conv = nn.Sequential(SpectralNorm(nn.Conv2d(3, 1*chn, 3,padding=1),),
-                                      nn.ReLU(),
-                                      SpectralNorm(nn.Conv2d(1*chn, 1*chn, 3,padding=1),),
-                                      nn.AvgPool2d(2))
-        self.pre_skip = SpectralNorm(nn.Conv2d(3, 1*chn, 1))
+        # AG for 128x128 images
+        if img_size == 128:
 
-        self.conv = nn.Sequential(conv(1*chn, 1*chn, downsample=True),
-                                  SelfAttention(1*chn),
-                                  conv(1*chn, 2*chn, downsample=True),    
-                                  conv(2*chn, 4*chn, downsample=True),
-                                  conv(4*chn, 8*chn, downsample=True),
-                                  conv(8*chn, 16*chn, downsample=True),
-                                  conv(16*chn, 16*chn, downsample=False))
+            self.pre_conv = nn.Sequential(SpectralNorm(nn.Conv2d(3, 1*chn, 3,padding=1),),
+                                        nn.ReLU(),
+                                        SpectralNorm(nn.Conv2d(1*chn, 1*chn, 3,padding=1),),
+                                        nn.AvgPool2d(2))
+            self.pre_skip = SpectralNorm(nn.Conv2d(3, 1*chn, 1))
 
-        self.linear = SpectralNorm(nn.Linear(16*chn, 1))
+            self.conv = nn.Sequential(conv(1*chn, 1*chn, downsample=True),
+                                    SelfAttention(1*chn),
+                                    conv(1*chn, 2*chn, downsample=True),    
+                                    conv(2*chn, 4*chn, downsample=True),
+                                    conv(4*chn, 8*chn, downsample=True),
+                                    conv(8*chn, 16*chn, downsample=True),
+                                    conv(16*chn, 16*chn, downsample=False))
 
-        self.embed = nn.Embedding(n_class, 16*chn)
-        self.embed.weight.data.uniform_(-0.1, 0.1)
-        self.embed = spectral_norm(self.embed)
+            self.linear = SpectralNorm(nn.Linear(16*chn, 1))
+
+            self.embed = nn.Embedding(n_class, 16*chn)
+            self.embed.weight.data.uniform_(-0.1, 0.1)
+            self.embed = spectral_norm(self.embed)
+            
+        # AG for 512x512 images
+        elif img_size == 512:
+            
+            self.pre_conv = nn.Sequential(SpectralNorm(nn.Conv2d(3, 1*chn, 3,padding=1),),
+                                        nn.ReLU(),
+                                        SpectralNorm(nn.Conv2d(1*chn, 1*chn, 3,padding=1),),
+                                        nn.AvgPool2d(2))
+            self.pre_skip = SpectralNorm(nn.Conv2d(3, 1*chn, 1))
+
+            self.conv = nn.Sequential(conv(1*chn, 1*chn, downsample=True),
+                                    conv(1*chn, 1*chn, downsample=True),
+                                    conv(1*chn, 2*chn, downsample=True),
+                                    SelfAttention(2*chn),
+                                    conv(2*chn, 4*chn, downsample=True),
+                                    conv(4*chn, 8*chn, downsample=True),
+                                    conv(4*chn, 8*chn, downsample=True),
+                                    conv(8*chn, 16*chn, downsample=True),
+                                    conv(16*chn, 16*chn, downsample=False))
+
+            self.linear = SpectralNorm(nn.Linear(16*chn, 1))
+
+            self.embed = nn.Embedding(n_class, 16*chn)
+            self.embed.weight.data.uniform_(-0.1, 0.1)
+            self.embed = spectral_norm(self.embed)
 
     def forward(self, input, class_id):
         
         out = self.pre_conv(input)
         out = out + self.pre_skip(F.avg_pool2d(input, 2))
-        # print(out.size())
+        #print(out.size())
         out = self.conv(out)
         out = F.relu(out)
         out = out.view(out.size(0), out.size(1), -1)

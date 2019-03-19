@@ -173,7 +173,7 @@ class Trainer(object):
             z_class, z_class_one_hot = self.label_sampel()
             
             fake_images = self.G(z, z_class_one_hot)
-
+            
             # Compute loss with fake images
             g_out_fake = self.D(fake_images, z_class)  # batch x n
             if self.adv_loss == 'wgan-gp':
@@ -219,8 +219,9 @@ class Trainer(object):
 
     def build_model(self):
         # code_dim=100, n_class=1000
-        self.G = Generator(self.z_dim, self.n_class, chn=self.chn).to(self.device)
-        self.D = Discriminator(self.n_class, chn=self.chn).to(self.device)
+        # AG: include image size in both Generator and Discriminator
+        self.G = Generator(self.z_dim, self.n_class, chn=self.chn, img_size=self.imsize).to(self.device)
+        self.D = Discriminator(self.n_class, chn=self.chn, img_size=self.imsize).to(self.device)
         if self.parallel:
             print('use parallel...')
             print('gpuids ', self.gpus)
@@ -239,7 +240,7 @@ class Trainer(object):
 
         self.c_loss = torch.nn.CrossEntropyLoss()
         # print networks
-        print(self.G)
+        ###print(self.G)
         print(self.D)
 
     def build_tensorboard(self):
