@@ -247,9 +247,9 @@ class Generator(nn.Module):
 
             self.conv = nn.ModuleList([GBlock(16*chn, 16*chn, n_class=n_class),
                                     GBlock(16*chn, 8*chn, n_class=n_class),
-                                    GBlock(16*chn, 8*chn, n_class=n_class),
+                                    GBlock(8*chn, 8*chn, n_class=n_class),
                                     GBlock(8*chn, 4*chn, n_class=n_class),
-                                    SelfAttention(2*chn),
+                                    SelfAttention(4*chn),
                                     GBlock(4*chn, 2*chn, n_class=n_class),
                                     GBlock(2*chn, 1*chn, n_class=n_class),
                                     GBlock(2*chn, 1*chn, n_class=n_class)])
@@ -339,7 +339,7 @@ class Discriminator(nn.Module):
                                     SelfAttention(2*chn),
                                     conv(2*chn, 4*chn, downsample=True),
                                     conv(4*chn, 8*chn, downsample=True),
-                                    conv(4*chn, 8*chn, downsample=True),
+                                    conv(8*chn, 8*chn, downsample=True),
                                     conv(8*chn, 16*chn, downsample=True),
                                     conv(16*chn, 16*chn, downsample=False))
 
