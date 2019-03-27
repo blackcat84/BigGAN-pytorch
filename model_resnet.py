@@ -121,10 +121,8 @@ class SelfAttention(nn.Module):
 
 
 class ConditionalNorm(nn.Module):
-    ###def __init__(self, in_channel, n_condition=148):
-    def __init__(self, in_channel, n_condition=144):
+    def __init__(self, in_channel, n_condition=148):
         super().__init__()
-
         self.bn = nn.BatchNorm2d(in_channel, affine=False)
 
         self.embed = nn.Linear(n_condition, in_channel* 2)
@@ -152,7 +150,8 @@ class ConditionalNorm(nn.Module):
 class GBlock(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size=[3, 3],
                  padding=1, stride=1, n_class=None, bn=True,
-                 activation=F.relu, upsample=True, downsample=False):
+                 activation=F.relu, upsample=True, downsample=False,
+                 n_condition=148):
         super().__init__()
 
         gain = 2 ** 0.5
@@ -175,10 +174,8 @@ class GBlock(nn.Module):
         self.activation = activation
         self.bn = bn
         if bn:
-            ###self.HyperBN = ConditionalNorm(in_channel, 148)
-            ###self.HyperBN_1 = ConditionalNorm(out_channel, 148)
-            self.HyperBN = ConditionalNorm(in_channel, 144)
-            self.HyperBN_1 = ConditionalNorm(out_channel, 144)
+            self.HyperBN = ConditionalNorm(in_channel, n_condition)
+            self.HyperBN_1 = ConditionalNorm(out_channel, n_condition)
 
     def forward(self, input, condition=None):
         out = input
@@ -223,7 +220,7 @@ class Generator(nn.Module):
         if debug:
             chn = 8
 
-        # AG for 128x128 images
+        # For 128x128 images
         if img_size == 128:
 
             self.first_view = 16 * chn
@@ -237,30 +234,32 @@ class Generator(nn.Module):
                                     SelfAttention(2*chn),
                                     GBlock(2*chn, 1*chn, n_class=n_class)])
             
-        # AG for 512x512 images
+        # For 512x512 images
         elif img_size == 512:
             
             self.first_view = 16 * chn
 
-            ###self.G_linear = SpectralNorm(nn.Linear(20, 4 * 4 * 16 * chn))
             self.G_linear = SpectralNorm(nn.Linear(16, 4 * 4 * 16 * chn))
 
-            self.conv = nn.ModuleList([GBlock(16*chn, 16*chn, n_class=n_class),
-                                    GBlock(16*chn, 8*chn, n_class=n_class),
-                                    GBlock(8*chn, 8*chn, n_class=n_class),
-                                    GBlock(8*chn, 4*chn, n_class=n_class),
+            self.conv = nn.ModuleList([GBlock(16*chn, 16*chn, n_class=n_class, n_condition=144),
+                                    GBlock(16*chn, 8*chn, n_class=n_class, n_condition=144),
+                                    GBlock(8*chn, 8*chn, n_class=n_class, n_condition=144),
+                                    GBlock(8*chn, 4*chn, n_class=n_class, n_condition=144),
                                     SelfAttention(4*chn),
-                                    GBlock(4*chn, 2*chn, n_class=n_class),
-                                    GBlock(2*chn, 1*chn, n_class=n_class),
-                                    GBlock(2*chn, 1*chn, n_class=n_class)])
+                                    GBlock(4*chn, 2*chn, n_class=n_class, n_condition=144),
+                                    GBlock(2*chn, 1*chn, n_class=n_class, n_condition=144),
+                                    GBlock(1*chn, 1*chn, n_class=n_class, n_condition=144)])
 
         # TODO impl ScaledCrossReplicaBatchNorm 
         self.ScaledCrossReplicaBN = ScaledCrossReplicaBatchNorm2d(1*chn)
         self.colorize = SpectralNorm(nn.Conv2d(1*chn, 3, [3, 3], padding=1))
 
-    def forward(self, input, class_id):
-        ###codes = torch.split(input, 20, 1)
-        codes = torch.split(input, 16, 1)
+    def forward(self, input, class_id, img_size):
+        if img_size == 128:
+            codes = torch.split(input, 20, 1)
+        elif img_size == 512:
+            codes = torch.split(input, 16, 1)
+            
         class_emb = self.linear(class_id)  # 128
 
         out = self.G_linear(codes[0])
@@ -301,7 +300,7 @@ class Discriminator(nn.Module):
             chn = 8
         self.debug = debug
 
-        # AG for 128x128 images
+        # For 128x128 images
         if img_size == 128:
 
             self.pre_conv = nn.Sequential(SpectralNorm(nn.Conv2d(3, 1*chn, 3,padding=1),),
@@ -324,7 +323,7 @@ class Discriminator(nn.Module):
             self.embed.weight.data.uniform_(-0.1, 0.1)
             self.embed = spectral_norm(self.embed)
             
-        # AG for 512x512 images
+        # For 512x512 images
         elif img_size == 512:
             
             self.pre_conv = nn.Sequential(SpectralNorm(nn.Conv2d(3, 1*chn, 3,padding=1),),
