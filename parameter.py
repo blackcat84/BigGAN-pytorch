@@ -31,12 +31,12 @@ def get_parameters():
     parser.add_argument('--beta2', type=float, default=0.9)
 
     # using pretrained
-    parser.add_argument('--pretrained_model', type=int, default=None)
+    parser.add_argument('--pretrained_model', type=int, default=None, help='--pretrained_model + number of step in model checkpoint')
 
     # Misc
     parser.add_argument('--train', type=str2bool, default=True)
     parser.add_argument('--parallel', type=str2bool, default=False)
-    parser.add_argument('--gpus', type=str, default='0', help='gpuids eg: 0,1,2,3  --parallel True  ')
+    parser.add_argument('--gpus', type=str, default='0', help='gpuids eg: 0,1,2,3  --parallel True')
     parser.add_argument('--dataset', type=str, default='lsun', choices=['lsun', 'celeb','off'])
     parser.add_argument('--use_tensorboard', type=str2bool, default=False)
 
@@ -50,7 +50,7 @@ def get_parameters():
     # Step size
     parser.add_argument('--log_step', type=int, default=10)
     parser.add_argument('--sample_step', type=int, default=100)
-    parser.add_argument('--model_save_step', type=float, default=1.0)
+    parser.add_argument('--model_save_step', type=float, default=1.0, help='This is model_save_step * number of train images')
 
 
     return parser.parse_args()
